@@ -1,0 +1,89 @@
+---
+title: "全球慢性病指标地图"
+format:
+  html:
+    toc: true
+    code-fold: false
+jupyter: python3
+---
+
+---
+title: "全球慢性病指标地图"
+format:
+  html:
+    toc: true
+    code-fold: false
+jupyter: python3
+---
+
+## 🗺️ 全球健康指标分布地图
+
+本图展示了各国在特定年份与性别下的健康指标（BMI、糖尿病、高血压等）分布情况。
+
+```{python}
+import pandas as pd
+import altair as alt
+import json
+
+# 读取数据
+data = pd.read_csv("data/processed-data/who_pivoted_data_with_classes.csv")
+
+# 地图数据（GeoJSON）
+with open("data/maps/world_countries.json", "r") as f:
+    countries = json.load(f)
+
+# Altair 地图数据格式
+country_geo = alt.Data(values=countries["features"])
+
+# 可选指标
+indicators = ["BMI", "Diabetes_Crude", "Diabetes_AgeStd", 
+              "Hypertension_Prevalence", "Hypertension_Control", "Hypertension_Treatment"]
+
+# 初始选择控件
+year_selector = alt.binding_range(min=data["year"].min(), max=data["year"].max(), step=1, name="Year:")
+gender_selector = alt.binding_select(options=data["Gender"].unique().tolist(), name="Gender:")
+indicator_selector = alt.binding_select(options=indicators, name="Indicator:")
+
+year_sel = alt.selection_single(fields=["year"], bind=year_selector, init={"year": 2000})
+gender_sel = alt.selection_single(fields=["Gender"], bind=gender_selector, init={"Gender": "Both"})
+indicator_sel = alt.selection_single(fields=["indicator"], bind=indicator_selector, init={"indicator": "BMI"})
+
+# 重塑数据方便 melt
+melted = data.melt(
+    id_vars=["location", "region", "year", "Gender", "risk_level", "health_status"],
+    value_vars=indicators,
+    var_name="indicator",
+    value_name="value"
+)
+
+# 绑定 selection 的过滤数据
+filtered = melted
+
+# 创建地图图表
+map_chart = alt.Chart(country_geo).mark_geoshape(
+    stroke="white"
+).encode(
+    color=alt.Color("value:Q", scale=alt.Scale(scheme="orangered"), title="Value"),
+    tooltip=[
+        alt.Tooltip("location:N", title="Country Code"),
+        alt.Tooltip("indicator:N", title="Indicator"),
+        alt.Tooltip("value:Q", format=".2f"),
+        alt.Tooltip("health_status:N")
+    ]
+).transform_lookup(
+    lookup="properties.ISO_A3",
+    from_=alt.LookupData(filtered, "location", ["value", "indicator", "health_status"])
+).project(
+    type="mercator"
+).add_selection(
+    year_sel, gender_sel, indicator_sel
+).transform_filter(
+    year_sel & gender_sel & indicator_sel
+).properties(
+    width=800,
+    height=450,
+    title="全球各国健康指标地图"
+)
+
+map_chart
+```

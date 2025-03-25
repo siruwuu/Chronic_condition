@@ -1,0 +1,199 @@
+---
+title: "全球慢性病指标地图（静态初始图）"
+format:
+  html
+jupyter: python3
+---
+
+## 🌍 全球 BMI 指标地图（静态版）
+
+本图展示了 2000 年在各国 `Both` 性别下的平均 BMI 水平分布情况。
+
+```{python}
+import pandas as pd
+import altair as alt
+from vega_datasets import data
+import pycountry
+
+# 读取数据
+df = pd.read_csv("data/processed-data/who_combined_data.csv")
+
+# 过滤数据
+filtered = df[
+    (df["year"] == 2022) &
+    (df["indicator_name"] == "BMI ≥ 30") &
+    (df["Gender"] == "Both sexes")
+].copy()
+
+# 将 Alpha-3 国家代码转换为 ISO 数字代码（匹配 Altair 地图）
+def alpha3_to_numeric(alpha3):
+    try:
+        return int(pycountry.countries.get(alpha_3=alpha3).numeric)
+    except:
+        return None
+
+filtered["id"] = filtered["country_code"].apply(alpha3_to_numeric)
+
+# 加载地图数据
+countries = alt.topo_feature(data.world_110m.url, "countries")
+
+# 画图
+chart = alt.Chart(countries).mark_geoshape(
+    stroke='white'
+).encode(
+    color=alt.Color("value:Q", scale=alt.Scale(scheme="orangered"), title="BMI ≥ 30 (%)"),
+    tooltip=[
+        alt.Tooltip("country:N", title="Country"),
+        alt.Tooltip("value:Q", title="BMI ≥ 30 (%)", format=".2f")
+    ]
+).transform_lookup(
+    lookup="id",
+    from_=alt.LookupData(filtered, "id", ["country", "value"])
+).project(
+    type="equalEarth"
+).properties(
+    width=800,
+    height=400,
+    title="2022年全球 BMI ≥ 30 的分布（Both Sexes）"
+)
+
+chart
+
+```
+
+
+```{python}
+import pandas as pd
+import altair as alt
+from vega_datasets import data
+import pycountry
+
+# 读取数据
+df = pd.read_csv("data/processed-data/who_combined_data.csv")
+
+# 筛选 2022 年、Both sexes、三个 BMI 指标
+filtered = df[
+    (df["year"] == 2022) &
+    (df["Gender"] == "Both sexes") &
+    (df["indicator_name"].isin(["BMI < 18.5", "BMI ≥ 25", "BMI ≥ 30"]))
+].copy()
+
+# 将 alpha-3 国家码转换为数字码以匹配地图
+def alpha3_to_numeric(alpha3):
+    try:
+        return int(pycountry.countries.get(alpha_3=alpha3).numeric)
+    except:
+        return None
+
+filtered["id"] = filtered["country_code"].apply(alpha3_to_numeric)
+filtered = filtered[filtered["id"].notna()]
+
+# 加载世界地图
+countries = alt.topo_feature(data.world_110m.url, "countries")
+
+# 定义画图函数
+def make_bmi_map(indicator_label, color_scheme):
+    df_sub = filtered[filtered["indicator_name"] == indicator_label]
+
+    return alt.Chart(countries).mark_geoshape(
+        stroke='white'
+    ).encode(
+        color=alt.Color("value:Q", title="Prevalence (%)", scale=alt.Scale(scheme=color_scheme)),
+        tooltip=[
+            alt.Tooltip("country:N", title="国家"),
+            alt.Tooltip("value:Q", title=indicator_label, format=".2f")
+        ]
+    ).transform_lookup(
+        lookup="id",
+        from_=alt.LookupData(df_sub, "id", ["country", "value"])
+    ).project(
+        type="equalEarth"
+    ).properties(
+        width=800,
+        height=300,
+        title=f"{indicator_label}（2022, Both Sexes）"
+    )
+
+# 分别创建三张地图
+# 三张图分别加上 .resolve_scale(color='independent')
+chart1 = make_bmi_map("BMI < 18.5", "blues").resolve_scale(color='independent')
+chart2 = make_bmi_map("BMI ≥ 25", "greens").resolve_scale(color='independent')
+chart3 = make_bmi_map("BMI ≥ 30", "orangered").resolve_scale(color='independent')
+
+# 拼接成竖图
+final_chart = alt.vconcat(chart1, chart2, chart3)
+
+
+final_chart
+
+```
+
+```{python}
+import pandas as pd
+import altair as alt
+from vega_datasets import data
+import pycountry
+
+# 读取数据
+df = pd.read_csv("data/processed-data/who_combined_data.csv")
+
+# 只保留 2022、Both sexes
+filtered = df[
+    (df["year"] == 2022) & (df["Gender"] == "Both sexes")
+].copy()
+
+# 添加 numeric country ID（地图 lookup 用）
+def alpha3_to_numeric(alpha3):
+    try:
+        return int(pycountry.countries.get(alpha_3=alpha3).numeric)
+    except:
+        return None
+
+filtered["id"] = filtered["country_code"].apply(alpha3_to_numeric)
+
+# 读取地图
+world_map = alt.topo_feature(data.world_110m.url, "countries")
+
+```
+
+```{python}
+# 不在图内部调用 configure_view，也不要 resolve_scale 放在图里
+def draw_bmi_map(indicator_label, color_scheme):
+    df_sub = filtered[filtered["indicator_name"] == indicator_label].copy()
+    
+    chart = alt.Chart(world_map).mark_geoshape(
+        stroke='white'
+    ).encode(
+        color=alt.Color("value:Q", title=indicator_label + " (%)", scale=alt.Scale(scheme=color_scheme)),
+        tooltip=[
+            alt.Tooltip("country:N", title="Country"),
+            alt.Tooltip("value:Q", title="Prevalence", format=".2f")
+        ]
+    ).transform_lookup(
+        lookup="id",
+        from_=alt.LookupData(df_sub, "id", ["country", "value"])
+    ).project(
+        type="equalEarth"
+    ).properties(
+        width=700,
+        height=300,
+        title=f"{indicator_label} （2022, Both Sexes）"
+    )
+    
+    return chart
+
+# 分别创建图
+bmi_under = draw_bmi_map("BMI < 18.5", "blues")
+bmi_over = draw_bmi_map("BMI ≥ 25", "greens")
+bmi_obese = draw_bmi_map("BMI ≥ 30", "oranges")
+
+# 拼接，并统一设置 config
+final = alt.vconcat(bmi_under, bmi_over, bmi_obese).configure_view(
+    stroke=None
+).resolve_scale(
+    color='independent'  # 每张图用独立的颜色比例
+)
+
+final
+
+```
